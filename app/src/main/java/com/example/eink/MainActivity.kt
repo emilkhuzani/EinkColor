@@ -18,6 +18,9 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private var enabled = false
     private var alt = false
+    private var sys = false
+    private var usedSys = false
+    private lateinit var sysBox: CheckBox
     private lateinit var status: TextView
     private lateinit var preview: PreviewView
 
@@ -69,6 +72,11 @@ class MainActivity : Activity() {
             text = "Mode alternatif (saturasi lewat 1022)"
             setOnCheckedChangeListener { _, c -> alt = c; if (enabled) push() }
         })
+        sysBox = CheckBox(this).apply {
+            text = "Mode sistem (tanpa 1015, untuk HP yang memblokir)"
+            setOnCheckedChangeListener { _, c -> if (c != sys) { sys = c; if (enabled) push() } }
+        }
+        root.addView(sysBox)
 
         root.addView(label("Tanpa Shizuku / root"))
         root.addView(row(
@@ -93,12 +101,27 @@ class MainActivity : Activity() {
     }
 
     private fun push() {
-        val cmd = when {
-            !enabled -> EInk.RESET_COMMAND
-            alt -> EInk.applyCommandAlt(p)
-            else -> EInk.applyCommand(p)
+        io.execute {
+            val msg = StringBuilder()
+            if (!enabled) {
+                val r = Shell.run(EInk.RESET_COMMAND)
+                msg.append("Reset: ").append(r.backend ?: "tidak ada backend").append("\n")
+                if (usedSys) msg.append(SystemMode.apply(p, false))
+            } else if (sys) {
+                usedSys = true
+                msg.append(SystemMode.apply(p, true))
+            } else {
+                val r = Shell.run(if (alt) EInk.applyCommandAlt(p) else EInk.applyCommand(p))
+                val blocked = r.backend == null || r.out.contains("rror", true) || r.out.contains("permitted", true)
+                if (blocked) {
+                    sys = true; usedSys = true
+                    msg.append("Perintah 1015 ditolak sistem (").append(r.out.take(100)).append(").\nBeralih ke mode sistem.\n")
+                    msg.append(SystemMode.apply(p, true))
+                    runOnUiThread { sysBox.isChecked = true }
+                } else msg.append("e-ink ON via ").append(r.backend).append("\nOutput: ").append(r.out.take(200))
+            }
+            runOnUiThread { status.text = msg.toString() }
         }
-        exec(cmd, if (enabled) "e-ink ON" else "e-ink OFF")
     }
 
     private fun exec(cmd: String, label: String) {
