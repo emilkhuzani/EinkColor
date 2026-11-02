@@ -17,6 +17,7 @@ class MainActivity : Activity() {
     private val p = Params().also { it.set(EInk.KALEIDO3) }
     private val io = Executors.newSingleThreadExecutor()
     private var enabled = false
+    private var alt = false
     private lateinit var status: TextView
     private lateinit var preview: PreviewView
 
@@ -58,6 +59,17 @@ class MainActivity : Activity() {
         addSlider(root, "Level hitam (kontras)", { p.blackLift }, { p.blackLift = it }, 0f, 0.20f)
         addSlider(root, "Putih kertas (kecerahan)", { p.whitePoint }, { p.whitePoint = it }, 0.60f, 1f)
 
+        root.addView(label("Diagnosa (jika layar tidak berubah)"))
+        root.addView(row(
+            button("Tes 1015") { exec(EInk.TEST_SWAP, "Tes 1015 (merah<->biru)") },
+            button("Tes 1022") { exec(EInk.TEST_GRAY, "Tes 1022 (abu-abu)") },
+            button("Reset") { enabled = false; push() }
+        ))
+        root.addView(CheckBox(this).apply {
+            text = "Mode alternatif (saturasi lewat 1022)"
+            setOnCheckedChangeListener { _, c -> alt = c; if (enabled) push() }
+        })
+
         root.addView(label("Tanpa Shizuku / root"))
         root.addView(row(
             button("Izin Shizuku") { requestShizuku() },
@@ -81,14 +93,22 @@ class MainActivity : Activity() {
     }
 
     private fun push() {
-        val cmd = if (enabled) EInk.applyCommand(p) else EInk.RESET_COMMAND
+        val cmd = when {
+            !enabled -> EInk.RESET_COMMAND
+            alt -> EInk.applyCommandAlt(p)
+            else -> EInk.applyCommand(p)
+        }
+        exec(cmd, if (enabled) "e-ink ON" else "e-ink OFF")
+    }
+
+    private fun exec(cmd: String, label: String) {
         io.execute {
-            val backend = Shell.run(cmd)
+            val r = Shell.run(cmd)
             runOnUiThread {
-                if (backend == null) {
+                if (r.backend == null) {
                     toast("Gagal. Aktifkan Shizuku/root, atau pakai perintah ADB.")
-                    refreshStatus()
-                } else status.text = "Aktif lewat $backend: " + if (enabled) "e-ink ON" else "e-ink OFF"
+                    status.text = "Gagal: " + r.out.take(300)
+                } else status.text = "$label via ${r.backend}\nOutput: ${r.out.take(300)}"
             }
         }
     }
@@ -110,10 +130,10 @@ class MainActivity : Activity() {
     }
 
     private fun copyAdb() {
-        val cmd = "adb shell " + (if (enabled) EInk.applyCommand(p) else EInk.applyCommand(p))
+        val inner = if (alt) EInk.applyCommandAlt(p) else EInk.applyCommand(p)
         (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-            .setPrimaryClip(ClipData.newPlainText("adb", cmd))
-        toast("Perintah disalin. Reset: adb shell ${EInk.RESET_COMMAND}")
+            .setPrimaryClip(ClipData.newPlainText("adb", "adb shell \"$inner\""))
+        toast("Perintah disalin.")
     }
 
     // ---------- UI helpers ----------

@@ -56,5 +56,18 @@ object EInk {
         return sb.toString()
     }
 
-    const val RESET_COMMAND = "service call SurfaceFlinger 1015 i32 0"
+    /** Mode alternatif: saturasi lewat kode 1022, matriks 1015 tanpa desaturasi. */
+    fun applyCommandAlt(p: Params): String =
+        "service call SurfaceFlinger 1022 f " + String.format(Locale.US, "%.3f", p.saturation) +
+            "; " + applyCommand(p.copy(saturation = 1f))
+
+    const val RESET_COMMAND =
+        "service call SurfaceFlinger 1015 i32 0; service call SurfaceFlinger 1022 f 1.0"
+
+    /** Tes diagnosa: tukar merah<->biru (kalau 1015 jalan, warna langsung aneh). */
+    const val TEST_SWAP = "service call SurfaceFlinger 1015 i32 1 " +
+        "f 0 f 0 f 1 f 0 f 0 f 1 f 0 f 0 f 1 f 0 f 0 f 0 f 0 f 0 f 0 f 1"
+
+    /** Tes diagnosa: layar jadi abu-abu penuh (kalau 1022 jalan). */
+    const val TEST_GRAY = "service call SurfaceFlinger 1022 f 0.0"
 }
